@@ -21,6 +21,9 @@ class Tensor:
             t = [t,] * n
         return MutableDenseNDimArray(t)
     
+    def assign(self, array):
+        self.components = array.reshape(len(array)).tolist()
+    
     def coord_id(self, component_num):
         indices = []
         for i in range(self.rank()):
@@ -138,11 +141,6 @@ def compile_metric():
     check_metric()
 
 
-def assign(instance, tensor_var_name):
-    instance.components = tensor_var_name.reshape(
-        len(tensor_var_name)).tolist()
-
-
 metric = Tensor('metric tensor', 'g', '_**', [])
 metric_inv = Tensor('inverse of metric tensor', 'g', '__**', [])
 metric_d = Tensor('partial derivative of metric tensor', 'g', '_**,*', [])
@@ -168,9 +166,9 @@ if __name__ == '__main__':
     # calculate everything:
     # inverse metric:
     g_inv = MutableDenseNDimArray(g.inv())
-    assign(metric_inv, g_inv)
+    metric_inv.assign(g_inv)
     g = MutableDenseNDimArray(g)
-    assign(metric, g)
+    metric.assign(g)
     # first derivatives of metric components:
     g_d = metric_d.tensor_full_of(0)
     for i in range(n):
@@ -180,7 +178,7 @@ if __name__ == '__main__':
         for j in range(i, n):
             for d in range(n):
                 g_d[i, j, d] = diff(g[i, j], coordinates[d])
-    assign(metric_d, g_d)
+    metric_d.assign(g_d)
     # Christoffel symbols for Levi-Civita connection (Gam^i_jk):
     Gamma = Christoffel.tensor_full_of(0)
     for i in range(n):
@@ -192,7 +190,7 @@ if __name__ == '__main__':
                     Gamma[i, j, k] += S(1)/2 * g_inv[i, l] * (
                         -g_d[j, k, l] + g_d[k, l, j] + g_d[l, j, k]
                         )
-    assign(Christoffel, Gamma)
+    Christoffel.assign(Gamma)
     # first derivatives of Christoffel symbols (Gam^i_jk,d):
     Gamma_d = Christoffel_d.tensor_full_of(0)
     for i in range(n):
@@ -204,7 +202,7 @@ if __name__ == '__main__':
                 for d in range(n):
                     Gamma_d[i, j, k, d] = simplify(diff(Gamma[i, j, k],
                                                         coordinates[d]))
-    assign(Christoffel_d, Gamma_d)
+    Christoffel_d.assign(Gamma_d)
     # Riemann curvature tensor (R^i_jkl):
     Rie = Riemann.tensor_full_of(0)
     for i in range(n):
@@ -218,10 +216,10 @@ if __name__ == '__main__':
                         Rie[i, j, k, l] += (Gamma[h, j, l] * Gamma[i, h, k]
                                         - Gamma[h, j, k] * Gamma[i, h, l])
                         Rie[i, j, k, l] = simplify(Rie[i, j, k, l])
-    assign(Riemann, Rie)
+    Riemann.assign(Rie)
     # Ricci curvature tensor (R_jl):
     Ric = simplify(tensorcontraction(Rie, (0, 2)))
-    assign(Ricci, Ric)
+    Ricci.assign(Ric)
     # Ricci curvature scalar:
     R = 0
     for i in range(n):
@@ -235,7 +233,7 @@ if __name__ == '__main__':
             G[i, j] = G[j, i]
         for j in range(i, n):
             G[i, j] = simplify(Ric[i, j] - S(1)/2 * R * g[i, j])
-    assign(Einstein, G)
+    Einstein.assign(G)
     # G^i_j:
     G_alt = Einstein_alt.tensor_full_of(0)
     for i in range(n):
@@ -243,7 +241,7 @@ if __name__ == '__main__':
             for k in range(n):
                 G_alt[i, j] += g_inv[i, k] * G[k, j]
             G_alt[i, j] = simplify(G_alt[i, j])
-    assign(Einstein_alt, G_alt)
+    Einstein_alt.assign(G_alt)
 
     # print it all
     print()
