@@ -1,16 +1,16 @@
 from sympy import MutableDenseNDimArray, Symbol, eye, Matrix, reshape, S, diff
 from sympy import det, tensorcontraction, latex, Eq, sympify, simplify
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from IPython.display import display as Idisplay
 from IPython.display import Math
 
 
-@dataclass(frozen=False, order=True)
+@dataclass
 class Tensor:
     name: str
     symbol: str
     key: str
-    components: list
+    components: list = field(default_factory=list)
     
     def rank(self):
         return self.key.count('*')
@@ -129,7 +129,12 @@ def check_metric():
         check_metric()
 
 
+def to_array(nested_list):
+    return MutableDenseNDimArray(nested_list)
+
+
 def compile_metric():
+    global g, g_inv
     get_dimension()
     check_dimension()
     get_coordinates()
@@ -139,37 +144,14 @@ def compile_metric():
     get_metric()
     format_metric()
     check_metric()
-
-
-metric = Tensor('metric tensor', 'g', '_**', [])
-metric_inv = Tensor('inverse of metric tensor', 'g', '__**', [])
-metric_d = Tensor('partial derivative of metric tensor', 'g', '_**,*', [])
-Christoffel = Tensor('Christoffel symbol - 2nd kind', 'Gamma', '__*_**', [])
-Christoffel_d = Tensor('partial derivative of Christoffel symbol',
-                       'Gamma', '__*_**,*', [])
-Riemann = Tensor('Riemann curvature tensor', 'R', '__*_***', [])
-Ricci = Tensor('Ricci curvature tensor', 'R', '_**', [])
-Einstein = Tensor('Einstein tensor', 'G', '_**', [])
-Einstein_alt = Tensor('Einstein tensor', 'G', '__*_*', [])
-
-GREEK_SYMBOLS = ['alpha', 'beta', 'gamma', 'Gamma', 'delta', 'Delta',
-                 'epsilon', 'varepsilon', 'zeta', 'eta', 'theta', 'vartheta',
-                 'Theta', 'iota', 'kappa', 'lambda', 'Lambda', 'mu', 'nu',
-                 'xi', 'Xi', 'pi', 'Pi', 'rho', 'varrho', 'sigma', 'Sigma',
-                 'tau', 'upsilon', 'Upsilon', 'phi', 'varphi', 'Phi', 'chi',
-                 'psi', 'Psi', 'omega', 'Omega']
-OK_RESPONSES = ['y', 'yes', 'n', 'no']
-
-if __name__ == '__main__':
-    compile_metric()
-    
-    # calculate everything:
-    # inverse metric:
-    g_inv = MutableDenseNDimArray(g.inv())
-    metric_inv.assign(g_inv)
-    g = MutableDenseNDimArray(g)
+    g_inv = to_array(g.inv())
+    g = to_array(g)
     metric.assign(g)
-    # first derivatives of metric components:
+    metric_inv.assign(g_inv)
+    
+
+def calculate_metric_d():
+    global g_d
     g_d = metric_d.tensor_full_of(0)
     for i in range(n):
         for j in range(i):
@@ -179,7 +161,10 @@ if __name__ == '__main__':
             for d in range(n):
                 g_d[i, j, d] = diff(g[i, j], coordinates[d])
     metric_d.assign(g_d)
-    # Christoffel symbols for Levi-Civita connection (Gam^i_jk):
+
+
+def calculate_Gamma():
+    global Gamma
     Gamma = Christoffel.tensor_full_of(0)
     for i in range(n):
         for j in range(n):
@@ -191,7 +176,10 @@ if __name__ == '__main__':
                         -g_d[j, k, l] + g_d[k, l, j] + g_d[l, j, k]
                         )
     Christoffel.assign(Gamma)
-    # first derivatives of Christoffel symbols (Gam^i_jk,d):
+
+
+def calculate_Gamma_d():
+    global Gamma_d
     Gamma_d = Christoffel_d.tensor_full_of(0)
     for i in range(n):
         for j in range(n):
@@ -203,7 +191,10 @@ if __name__ == '__main__':
                     Gamma_d[i, j, k, d] = simplify(diff(Gamma[i, j, k],
                                                         coordinates[d]))
     Christoffel_d.assign(Gamma_d)
-    # Riemann curvature tensor (R^i_jkl):
+
+
+def calculate_Rie():
+    global Rie
     Rie = Riemann.tensor_full_of(0)
     for i in range(n):
         for j in range(n):
@@ -217,16 +208,25 @@ if __name__ == '__main__':
                                         - Gamma[h, j, k] * Gamma[i, h, l])
                         Rie[i, j, k, l] = simplify(Rie[i, j, k, l])
     Riemann.assign(Rie)
-    # Ricci curvature tensor (R_jl):
+
+
+def calculate_Ric():
+    global Ric
     Ric = simplify(tensorcontraction(Rie, (0, 2)))
     Ricci.assign(Ric)
-    # Ricci curvature scalar:
+
+
+def calculate_R():
+    global R
     R = 0
     for i in range(n):
         for j in range(n):
             R += g_inv[i, j] * Ric[i, j]
     R = simplify(R)
-    # Einstein tensor (G_ij):
+
+
+def calculate_G():
+    global G
     G = Einstein.tensor_full_of(0)
     for i in range(n):
         for j in range(i):
@@ -234,7 +234,10 @@ if __name__ == '__main__':
         for j in range(i, n):
             G[i, j] = simplify(Ric[i, j] - S(1)/2 * R * g[i, j])
     Einstein.assign(G)
-    # G^i_j:
+
+
+def calculate_G_alt():
+    global G_alt
     G_alt = Einstein_alt.tensor_full_of(0)
     for i in range(n):
         for j in range(n):
@@ -243,7 +246,41 @@ if __name__ == '__main__':
             G_alt[i, j] = simplify(G_alt[i, j])
     Einstein_alt.assign(G_alt)
 
-    # print it all
+
+def calculate_GR_tensors():
+    calculate_metric_d()
+    calculate_Gamma()
+    calculate_Gamma_d()
+    calculate_Rie()
+    calculate_Ric()
+    calculate_R()
+    calculate_G()
+    calculate_G_alt()
+
+
+metric = Tensor('metric tensor', 'g', '_**')
+metric_inv = Tensor('inverse of metric tensor', 'g', '__**')
+metric_d = Tensor('partial derivative of metric tensor', 'g', '_**,*')
+Christoffel = Tensor('Christoffel symbol - 2nd kind', 'Gamma', '__*_**')
+Christoffel_d = Tensor('partial derivative of Christoffel symbol',
+                       'Gamma', '__*_**,*')
+Riemann = Tensor('Riemann curvature tensor', 'R', '__*_***')
+Ricci = Tensor('Ricci curvature tensor', 'R', '_**')
+Einstein = Tensor('Einstein tensor', 'G', '_**')
+Einstein_alt = Tensor('Einstein tensor', 'G', '__*_*')
+
+GREEK_SYMBOLS = ['alpha', 'beta', 'gamma', 'Gamma', 'delta', 'Delta',
+                 'epsilon', 'varepsilon', 'zeta', 'eta', 'theta', 'vartheta',
+                 'Theta', 'iota', 'kappa', 'lambda', 'Lambda', 'mu', 'nu',
+                 'xi', 'Xi', 'pi', 'Pi', 'rho', 'varrho', 'sigma', 'Sigma',
+                 'tau', 'upsilon', 'Upsilon', 'phi', 'varphi', 'Phi', 'chi',
+                 'psi', 'Psi', 'omega', 'Omega']
+
+OK_RESPONSES = ['y', 'yes', 'n', 'no']
+
+if __name__ == '__main__':
+    compile_metric()
+    calculate_GR_tensors()
     print()
     metric.print_tensor()
     metric_inv.print_tensor()
