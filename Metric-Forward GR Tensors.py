@@ -24,17 +24,12 @@ class Tensor:
     def print_tensor(self):
         for i in product(range(n), repeat=self.rank()):
             if self.use[i] != 0:
-                indices = []
-                for j in range(len(i)):
-                    indices.append(coordinates[i[j]])
-                    if any(symbol in indices[j] for symbol in GREEK_SYMBOLS):
-                        indices[j] = '\\' + indices[j] + ' '
                 index_key = self.key
                 umth_star = 0
                 for k in index_key:
                     if k == '*':
                         index_key = index_key.replace('*',
-                                                      indices[umth_star], 1)
+                                                      coords[i[umth_star]], 1)
                         umth_star += 1
                 disp(Math(latex(Eq(Symbol(self.symbol + index_key),
                                    self.use[i]))))
@@ -58,10 +53,14 @@ def check_dimension():
 
 
 def get_coordinates():
-    global coordinates
+    global coordinates, coords
     coordinates = []
     for i in range(n):
         coordinates.append(input('Enter coordinate label %d:  ' % i))
+    coords = coordinates[:]
+    for j in range(len(coords)):
+        if any(symbol in coords[j] for symbol in GREEK_SYMBOLS):
+            coords[j] = '\\' + coords[j] + ' '
 
 
 def check_coordinates():
