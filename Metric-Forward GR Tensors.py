@@ -86,9 +86,8 @@ def check_diagonal():
 def get_metric():
     global g_m
     g_m = eye(n).tolist()
-    for i in range(n):
-        for j in range(n):
-            g_m[i][j] = '0'
+    for i in product(range(n), repeat=2):
+        g_m[i[0]][i[1]] = '0'
     if diagonal[0] == 'y':
         for i in range(n):
             g_m[i][i] = input('What is g_[%s%s]?  '
@@ -132,13 +131,12 @@ def calculate_g_d():
 
 def calculate_Gamma():
     Gamma.initialize()
-    for i in product(range(n), repeat=3):
-        for j in range(n):
-            Gamma.use[i] += S(1)/2 * g_inv.use[i[0], j] * (
-                g_d.use[i[2], j, i[1]]
-                + g_d.use[j, i[1], i[2]]
-                - g_d.use[i[1], i[2], j]
-                )
+    for i in product(range(n), repeat=4):
+        Gamma.use[i[:3]] += S(1)/2 * g_inv.use[i[::3]] * (
+            g_d.use[i[2], i[3], i[1]]
+            + g_d.use[i[3], i[1], i[2]]
+            - g_d.use[i[1:]]
+            )
 
 
 def calculate_Gamma_d():
@@ -157,10 +155,6 @@ def calculate_Rie():
                 - Gamma.use[j, i[1], i[2]] * Gamma.use[i[0], j, i[3]]
                 )
         Rie.use[i] = simplify(Rie.use[i])
-
-
-def calculate_Ric():
-    Ric.use = simplify(tensorcontraction(Rie.use, (0, 2)))
 
 
 def calculate_R():
@@ -203,7 +197,7 @@ def calculate_GR_tensors():
     calculate_Gamma()
     calculate_Gamma_d()
     calculate_Rie()
-    calculate_Ric()
+    Ric.use = simplify(tensorcontraction(Rie.use, (0, 2)))
     calculate_R()
     calculate_G()
     calculate_G_alt()
