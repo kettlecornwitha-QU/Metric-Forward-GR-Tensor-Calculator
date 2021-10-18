@@ -1,9 +1,45 @@
-from sympy import MutableDenseNDimArray, Symbol, eye, Matrix, reshape, S, diff
-from sympy import det, tensorcontraction, latex, Eq, sympify, simplify
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from itertools import product
-from IPython.display import display as disp
-from IPython.display import Math
+from IPython import get_ipython
+from IPython.display import Math, display
+from sympy import (
+    MutableDenseNDimArray, Symbol, eye, Matrix, reshape, S, diff, det,
+    tensorcontraction, latex, Eq, simplify, Expr
+)
+
+
+def is_notebook() -> bool:
+    if get_ipython is not None:
+        return True
+
+
+def disp_eq(symbol, expression) -> None:
+    raw_latex = latex(Eq(Symbol(symbol), expression))
+    if is_notebook():
+        display(Math(raw_latex))
+    else:
+        print(raw_latex)
+
+
+@dataclass
+class Coordinate:
+    index: int
+    label: str
+    
+    def __post_init__(self) -> None:
+        self.symbol = Symbol(self.label)
+    
+    @classmethod
+    def from_stdin(cls, index) -> 'Coordinate':
+        while True:
+            label = input('Enter coordinate label %d:  ' % index)
+            if not any(char.isdigit() for char in label):
+                return cls(index, label)
+            print("You shouldn't have numbers in coordinate labels!")
+    
+    @property
+    def latex(self) -> str:
+        return latex(self.symbol)
 
 
 @dataclass
@@ -11,233 +47,199 @@ class Tensor:
     name: str
     symbol: str
     key: str
-    use: MutableDenseNDimArray = field(default_factory=MutableDenseNDimArray)
+    use: MutableDenseNDimArray
     
-    def rank(self):
+    @property
+    def rank(self) -> int:
         return self.key.count('*')
     
-    def initialize(self, t=0):
-        for i in range(self.rank()):
-            t = [t,] * n
-        self.use = MutableDenseNDimArray(t)
-    
-    def print_tensor(self):
-        for i in product(range(n), repeat=self.rank()):
-            if self.use[i] != 0:
-                index_key = self.key
-                umth_star = 0
-                for k in index_key:
-                    if k == '*':
-                        index_key = index_key.replace('*',
-                                                      coords[i[umth_star]], 1)
-                        umth_star += 1
-                disp(Math(latex(Eq(Symbol(self.symbol + index_key),
-                                   self.use[i]))))
+    def print_tensor(self, coords) -> None:
+        for i in product(range(len(coords)), repeat=self.rank):
+            if self.use[i] == 0:
+                continue
+            index_key = self.key.replace('*', '%s') % tuple(
+                coords[j].label for j in i
+            )
+            disp_eq((self.symbol + index_key), self.use[i])
         if any(self.use.reshape(len(self.use)).tolist()):
             print('\n\n')
 
 
-def get_dimension():
-    global n
-    n = input('Enter the number of dimensions:  ')
+class Sys:
+    def __init__(self, coords, g_m) -> None:
+        self.coords = coords
+        self.g = Tensor('metric tensor', 'g', '_*_*',
+                        MutableDenseNDimArray(g_m))
+        self.g_inv = Tensor('inverse of metric tensor', 'g', '^*^*',
+                            simplify(MutableDenseNDimArray(g_m.inv())))
+        self.g_d = Tensor('partial derivative of metric tensor', 'g',
+                          '_*_*_,_*', self.calculate_g_d())
+        self.Gamma = Tensor('Christoffel symbol - 2nd kind', 'Gamma', '^*_*_*',
+                            self.calculate_Gamma())
+        self.Gamma_d = Tensor('partial derivative of Christoffel symbol',
+                              'Gamma', '^*_*_*_,_*', self.calculate_Gamma_d())
+        self.Rie = Tensor('Riemann curvature tensor', 'R', '^*_*_*_*',
+                          self.calculate_Rie())
+        self.Ric = Tensor('Ricci curvature tensor', 'R', '_*_*',
+                          self.calculate_Ric())
+        self.R = self.calculate_R()
+        self.G = Tensor('Einstein tensor', 'G', '_*_*', self.calculate_G())
+        self.G_alt = Tensor('Einstein tensor', 'G', '^*_*',
+                            self.calculate_G_alt())
+        
+    @property
+    def n(self) -> int:
+        return len(self.coords)
 
+    @staticmethod
+    def ask_dim() -> int:
+        while True:
+            n = input('Enter the number of dimensions:  ')
+            if n.isnumeric():
+                return int(n)
+            print('Dimension needs to be a positive integer!')
 
-def check_dimension():
-    global n
-    if n.isnumeric():
-        n = int(n)
-    else:
-        print('Number of dimensions needs to be an integer!')
-        get_dimension()
-        check_dimension()
-
-
-def get_coordinates():
-    global coordinates, coords
-    coordinates = []
-    for i in range(n):
-        coordinates.append(input('Enter coordinate label %d:  ' % i))
-    coords = coordinates[:]
-    for j in range(len(coords)):
-        if any(symbol in coords[j] for symbol in GREEK_SYMBOLS):
-            coords[j] = '\\' + coords[j] + ' '
-
-
-def check_coordinates():
-    for i in range(len(coordinates)):
-        if any(char.isdigit() for char in coordinates[i]):
-            print("You shouldn't have numbers in coordinate labels!")
-            get_coordinates()
-            check_coordinates()
-
-
-def ask_diagonal():
-    global diagonal
-    diagonal = input('Is metric diagonal?  ').lower()
-
-
-def check_diagonal():
-    if diagonal not in OK_RESPONSES:
-        print('It was a yes or no question...')
-        ask_diagonal()
-        check_diagonal()
-
-
-def get_metric():
-    global g_m
-    g_m = eye(n).tolist()
-    for i in product(range(n), repeat=2):
-        g_m[i[0]][i[1]] = '0'
-    if diagonal[0] == 'y':
-        for i in range(n):
-            g_m[i][i] = input('What is g_[%s%s]?  '
-                              % (coordinates[i], coordinates[i]))
-    else:
-        for i in range(n):
-            for j in range(i, n):
-                g_m[i][j] = input('What is g_[%s%s]?  '
-                                  % (coordinates[i], coordinates[j]))
-
-
-def format_metric():
-    global g_m
-    for i in range(n):
-        for j in range(i, n):
-            g_m[i][j] = g_m[i][j].replace('^', '**')
-            for k in range(len(g_m[i][j])-1):
-                if (
-                    g_m[i][j][k].isnumeric() and (g_m[i][j][k+1].isalpha() or
-                                                  g_m[i][j][k+1] == '(')
-                    ) or (g_m[i][j][k] == ')' and g_m[i][j][k+1].isalpha()):
-                    g_m[i][j] = g_m[i][j][:k+1] + '*' + g_m[i][j][k+1:]
-            g_m[j][i] = g_m[i][j]
-    g_m = Matrix(g_m)
-    g.use = MutableDenseNDimArray(g_m)
-
-
-def check_metric():
-    if g_m.det() == 0:
-        print('\nMetric is singular, try again!\n')
-        get_metric()
-        format_metric()
-        check_metric()
-
-
-def calculate_g_d():
-    g_d.initialize()
-    for i in product(range(n), repeat=3):
-        g_d.use[i] = diff(g.use[i[:2]], coordinates[i[2]])
-
-
-def calculate_Gamma():
-    Gamma.initialize()
-    for i in product(range(n), repeat=4):
-        Gamma.use[i[:3]] += S(1)/2 * g_inv.use[i[::3]] * (
-            g_d.use[i[2], i[3], i[1]]
-            + g_d.use[i[3], i[1], i[2]]
-            - g_d.use[i[1:]]
-            )
-
-
-def calculate_Gamma_d():
-    Gamma_d.initialize()
-    for i in product(range(n), repeat=4):
-        Gamma_d.use[i] = simplify(diff(Gamma.use[i[:3]], coordinates[i[3]]))
-
-
-def calculate_Rie():
-    Rie.initialize()
-    for i in product(range(n), repeat=4):
-        Rie.use[i] = Gamma_d.use[i[0], i[1], i[3], i[2]] - Gamma_d.use[i]
-        for j in range(n):
-            Rie.use[i] += (
-                Gamma.use[j, i[1], i[3]] * Gamma.use[i[0], j, i[2]]
-                - Gamma.use[j, i[1], i[2]] * Gamma.use[i[0], j, i[3]]
-                )
-        Rie.use[i] = simplify(Rie.use[i])
-
-
-def calculate_R():
-    global R
-    R = 0
-    for i in product(range(n), repeat=2):
-        R += g_inv.use[i] * Ric.use[i]
-    R = simplify(R)
-
-
-def calculate_G():
-    G.initialize()
-    for i in product(range(n), repeat=2):
-        G.use[i] = simplify(Ric.use[i] - S(1)/2 * R * g.use[i])
-
-
-def calculate_G_alt():
-    G_alt.initialize()
-    for i in product(range(n), repeat=2):
-        for j in range(n):
-            G_alt.use[i] += g_inv.use[i[0], j] * G.use[j, i[1]]
-        G_alt.use[i] = simplify(G_alt.use[i])
-
-
-def compile_metric():
-    get_dimension()
-    check_dimension()
-    get_coordinates()
-    check_coordinates()
-    ask_diagonal()
-    check_diagonal()
-    get_metric()
-    format_metric()
-    check_metric()
-    g_inv.use = MutableDenseNDimArray(g_m.inv())
+    @staticmethod
+    def ask_diag() -> bool:
+        while True:
+            diagonal = input('Is metric diagonal? (y/n)  ').lower()
+            if diagonal[0] in ['y', 'n']:
+                return diagonal.startswith('y')
+            print('It was a yes or no question...')
     
+    @staticmethod
+    def metric_prompt(i, j) -> str:
+        if is_notebook():
+            display(Math(r'\text{What is } g_{' + i.latex + j.latex + '}?  '))
+            prompt = ''
+        else:
+            prompt = f'What is g_[{i} {j}]?  '
+        return input(prompt)
+    
+    @classmethod
+    def get_metric(cls, coords, is_diagonal) -> list:
+        g_m = eye(len(coords)).tolist()
+        if is_diagonal:
+            for i, coord in enumerate(coords):
+                g_m[i][i] = cls.metric_prompt(coord, coord)
+        else:
+            for i in range(len(coords)):
+                for j in range(i, len(coords)):
+                    g_m[i][j] = cls.metric_prompt(coords[i], coords[j])
+                    g_m[j][i] = g_m[i][j]
+        return g_m
+    
+    @classmethod
+    def get_metric_checked(cls, coords, is_diagonal) -> Matrix:
+        while True:
+            g_m = Matrix(cls.get_metric(coords, is_diagonal))
+            if g_m.det() != 0:
+                return g_m
+            print('\nMetric is singular, try again!\n')
+    
+    @classmethod
+    def from_stdin(cls) -> 'Sys':
+        coords = [Coordinate.from_stdin(i) for i in range(cls.ask_dim())]
+        is_diagonal = cls.ask_diag()
+        return cls(
+            coords=coords, g_m=cls.get_metric_checked(coords, is_diagonal)
+        )
+    
+    def calculate_g_d(self) -> MutableDenseNDimArray:
+        n, g = self.n, self.g.use
+        g_d = MutableDenseNDimArray.zeros(n, n, n)
+        for i, j, k in product(range(n), repeat=3):
+            g_d[i, j, k] = diff(g[i, j], self.coords[k].symbol)
+        return g_d
 
-def calculate_GR_tensors():
-    calculate_g_d()
-    calculate_Gamma()
-    calculate_Gamma_d()
-    calculate_Rie()
-    Ric.use = simplify(tensorcontraction(Rie.use, (0, 2)))
-    calculate_R()
-    calculate_G()
-    calculate_G_alt()
+    def calculate_Gamma(self) -> MutableDenseNDimArray:
+        n, g_inv, g_d = self.n, self.g_inv.use, self.g_d.use
+        Gamma = MutableDenseNDimArray.zeros(n, n, n)
+        for i, j, k, l in product(range(n), repeat=4):
+            Gamma[i, j, k] += S(1)/2 * g_inv[i, l] * (
+                g_d[k, l, j]
+                + g_d[l, j, k]
+                - g_d[j, k, l]
+                )
+        return Gamma
 
+    def calculate_Gamma_d(self) -> MutableDenseNDimArray:
+        n, Gamma = self.n, self.Gamma.use
+        Gamma_d = MutableDenseNDimArray.zeros(n, n, n, n)
+        for i, j, k, l in product(range(n), repeat=4):
+            Gamma_d[i, j, k, l] = simplify(
+                diff(Gamma[i, j, k], self.coords[l].symbol)
+            )
+        return Gamma_d
 
-def print_GR_tensors():
-    g.print_tensor()
-    g_inv.print_tensor()
-    g_d.print_tensor()
-    Gamma.print_tensor()
-    Gamma_d.print_tensor()
-    Rie.print_tensor()
-    Ric.print_tensor()
-    if R != 0:
-        disp(Math(latex(Eq(Symbol('R'), R))))
-        print('\n\n')
-    G.print_tensor()
-    G_alt.print_tensor()
+    def calculate_Rie(self) -> MutableDenseNDimArray:
+        n, Gamma_d, Gamma = self.n, self.Gamma_d.use, self.Gamma.use
+        Rie = MutableDenseNDimArray.zeros(n, n, n, n)
+        for i, j, k, l in product(range(n), repeat=4):
+            Rie[i, j, k, l] = Gamma_d[i, j, l, k] - Gamma_d[i, j, k, l]
+            for m in range(n):
+                Rie[i, j, k, l] += (
+                    Gamma[m, j, l] * Gamma[i, m, k]
+                    - Gamma[m, j, k] * Gamma[i, m, l]
+                    )
+            Rie[i, j, k, l] = simplify(Rie[i, j, k, l])
+        return Rie
 
+    def calculate_Ric(self) -> MutableDenseNDimArray:
+        Rie = self.Rie.use
+        return simplify(tensorcontraction(Rie, (0, 2)))
+    
+    def calculate_R(self) -> Expr:
+        n, g_inv, Ric = self.n, self.g_inv.use, self.Ric.use
+        R = 0
+        for i in product(range(n), repeat=2):
+            R += g_inv[i] * Ric[i]
+        return simplify(R)
 
-g = Tensor('metric tensor', 'g', '_**')
-g_inv = Tensor('inverse of metric tensor', 'g', '__**')
-g_d = Tensor('partial derivative of metric tensor', 'g', '_**,*')
-Gamma = Tensor('Christoffel symbol - 2nd kind', 'Gamma', '__*_**')
-Gamma_d = Tensor('partial derivative of Christoffel symbol',
-                 'Gamma', '__*_**,*')
-Rie = Tensor('Riemann curvature tensor', 'R', '__*_***')
-Ric = Tensor('Ricci curvature tensor', 'R', '_**')
-G = Tensor('Einstein tensor', 'G', '_**')
-G_alt = Tensor('Einstein tensor', 'G', '__*_*')
+    def calculate_G(self) -> MutableDenseNDimArray:
+        n, Ric, R, g = self.n, self.Ric.use, self.R, self.g.use
+        G = MutableDenseNDimArray.zeros(n, n)
+        for i in product(range(n), repeat=2):
+            G[i] = simplify(Ric[i] - S(1)/2 * R * g[i])
+        return G
 
-GREEK_SYMBOLS = ['alpha', 'beta', 'gamma', 'Gamma', 'delta', 'Delta',
-                 'epsilon', 'varepsilon', 'zeta', 'eta', 'theta', 'vartheta',
-                 'Theta', 'iota', 'kappa', 'lambda', 'Lambda', 'mu', 'nu',
-                 'xi', 'Xi', 'pi', 'Pi', 'rho', 'varrho', 'sigma', 'Sigma',
-                 'tau', 'upsilon', 'Upsilon', 'phi', 'varphi', 'Phi', 'chi',
-                 'psi', 'Psi', 'omega', 'Omega']
-OK_RESPONSES = ['y', 'yes', 'n', 'no']
+    def calculate_G_alt(self) -> MutableDenseNDimArray:
+        n, g_inv, G = self.n, self.g_inv.use, self.G.use
+        G_alt = MutableDenseNDimArray.zeros(n, n)
+        for i, j in product(range(n), repeat=2):
+            for k in range(n):
+                G_alt[i, j] += simplify(g_inv[i, k] * G[k, j])
+            G_alt[i, j] = simplify(G_alt[i, j])
+        return G_alt
+
+    def print_GR_tensors(self) -> None:
+        for tensor in (
+            self.g, self.g_inv, self.g_d, self.Gamma,
+            self.Gamma_d, self.Rie, self.Ric
+        ):
+            tensor.print_tensor(self.coords)
+        if self.R != 0:
+            disp_eq('R', self.R)
+            print('\n\n')
+        self.G.print_tensor(self.coords)
+        self.G_alt.print_tensor(self.coords)
+    
+    @classmethod
+    def from_demo(cls) -> 'Sys':
+        return cls(
+        coords=[
+            Coordinate(i, name) for i, name in enumerate(
+                ['t', 'l', 'theta', 'phi']
+            )],
+        g_m=Matrix([
+            [-1, 0, 0, 0],
+            [0, 1, 0, 0],
+            [0, 0, 'r(l)^2', 0],
+            [0, 0, 0, 'r(l)^2*sin(theta)^2']
+        ]))
+
 
 if __name__ == '__main__':
-    compile_metric()
-    calculate_GR_tensors()
-    print_GR_tensors()
+    #Sys = Sys.from_demo()
+    Sys = Sys.from_stdin()
+    Sys.print_GR_tensors()
