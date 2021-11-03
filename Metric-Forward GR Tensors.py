@@ -119,7 +119,7 @@ class Sys:
         self.is_pseudo_riemannian = is_pseudo_riemannian
         self.using_orthonormal = using_orthonormal
         self.dual_basis = basis.inv()
-        self.CB_g = MutableDenseNDimArray(g_m)
+        self.CB_g = MutableDenseNDimArray(g_m)  # CB = coordinate basis
         self.CB_g_inv = simplify(MutableDenseNDimArray(g_m.inv()))
         self.CB_g_d = self.calculate_CB_g_d()
         self.CB_Gamma = self.calculate_CB_Gamma()
@@ -270,7 +270,7 @@ class Sys:
         for i, j, k, l in product(range(self.n), repeat=4):
             Gamma[i, j, k] += S(1)/2 * self.CB_g_inv[i, l] * (
                 g_d[k, l, j] + g_d[l, j, k] - g_d[j, k, l]
-                )
+            )
         return Gamma
     
     def calculate_Gamma(self) -> MutableDenseNDimArray:
@@ -303,27 +303,31 @@ class Sys:
         return Rie
     
     def calculate_Rie(self) -> MutableDenseNDimArray:
-        basis, dual_basis = self.basis, self.dual_basis
-        Rie = MutableDenseNDimArray.zeros(self.n, self.n, self.n, self.n)
-        for i, j, k, l in product(range(self.n), repeat=4):
-            for m, o, p, q in product(range(self.n), repeat=4):
-                Rie[i, j, k, l] += (self.CB_Rie[m, o, p, q]
-                                       * dual_basis[i, m] * basis[o, j]
-                                       * basis[p, k] * basis[q, l])
-            Rie[i, j, k, l] = simplify(Rie[i, j, k, l])
-        return Rie
+        if self.using_orthonormal:
+            basis, dual_basis = self.basis, self.dual_basis
+            Rie = MutableDenseNDimArray.zeros(self.n, self.n, self.n, self.n)
+            for i, j, k, l in product(range(self.n), repeat=4):
+                for m, o, p, q in product(range(self.n), repeat=4):
+                    Rie[i, j, k, l] += (self.CB_Rie[m, o, p, q]
+                                        * dual_basis[i, m] * basis[o, j]
+                                        * basis[p, k] * basis[q, l])
+                Rie[i, j, k, l] = simplify(Rie[i, j, k, l])
+            return Rie
+        return self.CB_Rie
 
     def calculate_CB_Ric(self) -> MutableDenseNDimArray:
         return simplify(tensorcontraction(self.CB_Rie, (0, 2)))
     
     def calculate_Ric(self) -> MutableDenseNDimArray:
-        basis = self.basis
-        Ric = MutableDenseNDimArray.zeros(self.n, self.n)
-        for i, j in product(range(self.n), repeat=2):
-            for k, l in product(range(self.n), repeat=2):
-                Ric[i, j] += self.CB_Ric[k, l] * basis[k, i] * basis[l, j]
-            Ric[i, j] = simplify(Ric[i, j])
-        return Ric
+        if self.using_orthonormal:
+            basis = self.basis
+            Ric = MutableDenseNDimArray.zeros(self.n, self.n)
+            for i, j in product(range(self.n), repeat=2):
+                for k, l in product(range(self.n), repeat=2):
+                    Ric[i, j] += self.CB_Ric[k, l] * basis[k, i] * basis[l, j]
+                Ric[i, j] = simplify(Ric[i, j])
+            return Ric
+        return self.CB_Ric
     
     def calculate_R(self) -> Expr:
         R = 0
@@ -338,13 +342,15 @@ class Sys:
         return G
 
     def calculate_G(self) -> MutableDenseNDimArray:
-        basis = self.basis
-        G = MutableDenseNDimArray.zeros(self.n, self.n)
-        for i, j in product(range(self.n), repeat=2):
-            for k, l in product(range(self.n), repeat=2):
-                G[i, j] += self.CB_G[k, l] * basis[k, i] * basis[l, j]
-            G[i, j] = simplify(G[i, j])
-        return G
+        if self.using_orthonormal:
+            basis = self.basis
+            G = MutableDenseNDimArray.zeros(self.n, self.n)
+            for i, j in product(range(self.n), repeat=2):
+                for k, l in product(range(self.n), repeat=2):
+                    G[i, j] += self.CB_G[k, l] * basis[k, i] * basis[l, j]
+                G[i, j] = simplify(G[i, j])
+            return G
+        return self.CB_G
     
     def calculate_CB_G_alt(self) -> MutableDenseNDimArray:
         G_alt = MutableDenseNDimArray.zeros(self.n, self.n)
@@ -355,14 +361,18 @@ class Sys:
         return G_alt
 
     def calculate_G_alt(self) -> MutableDenseNDimArray:
-        CB_G_alt = self.CB_G_alt
-        basis, dual_basis = self.basis, self.dual_basis
-        G_alt = MutableDenseNDimArray.zeros(self.n, self.n)
-        for i, j in product(range(self.n), repeat=2):
-            for k, l in product(range(self.n), repeat=2):
-                G_alt[i, j] += CB_G_alt[k, l] * dual_basis[i, k] * basis[l, j]
-            G_alt[i, j] = simplify(G_alt[i, j])
-        return G_alt
+        if self.using_orthonormal:
+            CB_G_alt = self.CB_G_alt
+            basis, dual_basis = self.basis, self.dual_basis
+            G_alt = MutableDenseNDimArray.zeros(self.n, self.n)
+            for i, j in product(range(self.n), repeat=2):
+                for k, l in product(range(self.n), repeat=2):
+                    G_alt[i, j] += (CB_G_alt[k, l]
+                                    * dual_basis[i, k]
+                                    * basis[l, j])
+                G_alt[i, j] = simplify(G_alt[i, j])
+            return G_alt
+        return self.CB_G_alt
     
     def print_GR_tensors(self) -> None:
         for tensor in (
@@ -379,25 +389,25 @@ class Sys:
     @classmethod
     def from_demo(cls) -> 'Sys':
         return cls(
-        coords=[
-            Coordinate(i, name) for i, name in enumerate(
-                ['t', 'l', 'theta', 'phi']
-            )
-        ],
-        basis=Matrix([
-            [1, 0, 0, 0],
-            [0, 1, 0, 0],
-            [0, 0, '1/r(l)', 0],
-            [0, 0, 0, '1/(r(l)*sin(theta))']
-        ]),
-        g_m=Matrix([
-            [-1, 0, 0, 0],
-            [0, 1, 0, 0],
-            [0, 0, 'r(l)^2', 0],
-            [0, 0, 0, 'r(l)^2*sin(theta)^2']
-        ]),
-        is_pseudo_riemannian=True,
-        using_orthonormal=True
+            coords=[
+                Coordinate(i, name) for i, name in enumerate(
+                    ['t', 'l', 'theta', 'phi']
+                )
+            ],
+            basis=Matrix([
+                [1, 0, 0, 0],
+                [0, 1, 0, 0],
+                [0, 0, '1/r(l)', 0],
+                [0, 0, 0, '1/(r(l)*sin(theta))']
+            ]),
+            g_m=Matrix([
+                [-1, 0, 0, 0],
+                [0, 1, 0, 0],
+                [0, 0, 'r(l)^2', 0],
+                [0, 0, 0, 'r(l)^2*sin(theta)^2']
+            ]),
+            is_pseudo_riemannian=True,
+            using_orthonormal=True
         )
 
 
