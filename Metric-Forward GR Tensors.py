@@ -21,6 +21,19 @@ def disp_eq(symbol: str, expression: Expr) -> None:
         print(raw_latex)
 
 
+def y_n_question(latex_Q: str, str_Q: str) -> bool:
+    if is_notebook() and latex_Q is not None:
+        display(Math(latex_Q))
+        prompt = ''
+    else:
+        prompt = str_Q
+    while True:
+        response = input(prompt).lower()
+        if response[0] in ['y', 'n']:
+            return response.startswith('y')
+        print('It was a yes or no question...')
+
+
 @dataclass
 class Coordinate:
     index: int
@@ -28,6 +41,7 @@ class Coordinate:
     
     def __post_init__(self) -> None:
         self.symbol = Symbol(self.label)
+        self.latex = latex(self.symbol)
     
     @classmethod
     def from_stdin(cls, index: int) -> 'Coordinate':
@@ -39,10 +53,6 @@ class Coordinate:
     
     def __str__(self) -> str:
         return self.label
-
-    @property
-    def latex(self) -> str:
-        return latex(self.symbol)
 
 
 @dataclass
@@ -73,9 +83,8 @@ class Tensor:
     key: str
     use: MutableDenseNDimArray
     
-    @property
-    def rank(self) -> int:
-        return self.key.count('*')
+    def __post_init__(self) -> None:
+        self.rank = self.key.count('*')
     
     def print_tensor(
             self, coords: Coordinate, using_coord_basis: bool) -> None:
@@ -92,23 +101,11 @@ class Tensor:
             print('\n\n')
 
 
-def y_n_question(latex_Q: str, str_Q: str) -> bool:
-    if is_notebook() and latex_Q is not None:
-        display(Math(latex_Q))
-        prompt = ''
-    else:
-        prompt = str_Q
-    while True:
-        response = input(prompt).lower()
-        if response[0] in ['y', 'n']:
-            return response.startswith('y')
-        print('It was a yes or no question...')
-
-
 class Sys:
     def __init__(
             self, coords: list, basis: Matrix, g_m: Matrix,
             is_pseudo_riemannian: bool, using_coord_basis: bool) -> None:
+        self.n = len(self.coords)
         self.coords = coords
         self.basis = basis
         self.is_pseudo_riemannian = is_pseudo_riemannian
@@ -142,10 +139,6 @@ class Sys:
         self.G_alt = Tensor('Einstein tensor', 'G', '^*_*',
                             self.calculate_G_alt())
         
-    @property
-    def n(self) -> int:
-        return len(self.coords)
-    
     @staticmethod
     def ask_dim() -> int:
         while True:
