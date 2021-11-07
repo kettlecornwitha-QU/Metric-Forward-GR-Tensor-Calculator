@@ -104,11 +104,10 @@ class Tensor:
 class Sys:
     def __init__(
             self, coords: list, basis: Matrix, g_m: Matrix,
-            is_pseudo_riemannian: bool, using_coord_basis: bool) -> None:
-        self.n = len(self.coords)
+            using_coord_basis: bool) -> None:
+        self.n = len(coords)
         self.coords = coords
         self.basis = basis
-        self.is_pseudo_riemannian = is_pseudo_riemannian
         self.using_coord_basis = using_coord_basis
         self.dual_basis = basis.inv()
         self.CB_g = MutableDenseNDimArray(g_m)  # CB = coordinate basis
@@ -148,58 +147,46 @@ class Sys:
             print('Dimension needs to be a positive integer!')
 
     @staticmethod
-    def metric_prompt_CB(i: Coordinate, j: Coordinate) -> str:
+    def metric_prompt(i: int or Coordinate, j: int or Coordinate) -> str:
+        if isinstance(i, int):
+            index_1, index_2 = f'{i}', f'{j}'
+        else:
+            index_1, index_2 = i.latex, j.latex
         if is_notebook():
-            display(Math(r'\text{What is } g_{' + i.latex + j.latex + '}?  '))
+            display(Math(r'\text{What is } g_{' + index_1 + index_2 + '}?  '))
             prompt = ''
         else:
             prompt = 'What is g_[%s %s]?  ' % (i, j)
         return input(prompt)
     
-    @staticmethod
-    def metric_prompt_NCB(i: int, j: int) -> str:
-        if is_notebook():
-            display(Math(r'\text{What is } g_{' + f'{i}' + f'{j}' + '}?  '))
-            prompt = ''
-        else:
-            prompt = f'What is g_[{i} {j}]?  '
-        return input(prompt)
-    
     @classmethod
-    def ask_metric_CB(cls, coords: Coordinate, is_diagonal: bool) -> list:
+    def ask_metric(
+            cls, coords: Coordinate, using_coord_basis: bool,
+            is_diagonal: bool) -> list:
         g_m = eye(len(coords)).tolist()
         if is_diagonal:
-            for i, coord in enumerate(coords):
-                g_m[i][i] = cls.metric_prompt_CB(coord, coord)
+            indices = enumerate([i for i in range(len(coords))])
+            if using_coord_basis:
+                indices = enumerate(coords)
+            for i, j in indices:
+                    g_m[i][i] = cls.metric_prompt(j, j)
         else:
             for i in range(len(coords)):
                 for j in range(i, len(coords)):
-                    g_m[i][j] = cls.metric_prompt_CB(coords[i], coords[j])
-                    g_m[j][i] = g_m[i][j]
-        return g_m
-    
-    @classmethod
-    def ask_metric_NCB(cls, coords: Coordinate, is_diagonal: bool) -> list:
-        g_m = eye(len(coords)).tolist()
-        if is_diagonal:
-            for i in range(len(coords)):
-                g_m[i][i] = cls.metric_prompt_NCB(i, i)
-        else:
-            for i in range(len(coords)):
-                for j in range(i, len(coords)):
-                    g_m[i][j] = cls.metric_prompt_NCB(i, j)
+                    index_1, index_2 = i, j
+                    if using_coord_basis:
+                        index_1, index_2 = coords[i], coords[j]
+                    g_m[i][j] = cls.metric_prompt(index_1, index_2)
                     g_m[j][i] = g_m[i][j]
         return g_m
     
     @classmethod
     def metric_checked(
-            cls, using_coord_basis: bool, coords: Coordinate,
+            cls, coords: Coordinate, using_coord_basis: bool,
             is_diagonal: bool) -> Matrix:
         while True:
-            if using_coord_basis:
-                g_m = Matrix(cls.ask_metric_CB(coords, is_diagonal))
-            else:
-                g_m = Matrix(cls.ask_metric_NCB(coords, is_diagonal))
+            g_m = Matrix(cls.ask_metric(coords, using_coord_basis,
+                                           is_diagonal))
             if g_m.det() != 0:
                 return g_m
             print('\nMetric is singular, try again!\n')
@@ -245,7 +232,7 @@ class Sys:
             if is_pseudo_riemannian:
                 v[0] = -1
         else:
-            v = cls.metric_checked(using_coord_basis, coords,
+            v = cls.metric_checked(coords, using_coord_basis,
                                    is_diagonal).reshape(n**2, 1)
         return M.LUsolve(v).reshape(n, n)
 
@@ -258,8 +245,7 @@ class Sys:
             basis = eye(n)
             is_diagonal = y_n_question(r'\text{Is metric diagonal? (y/n)}',
                                        'Is metric diagonal? (y/n)  ')
-            g_m = cls.metric_checked(using_coord_basis, coords, is_diagonal)
-            is_pseudo_riemannian = True
+            g_m = cls.metric_checked(coords, using_coord_basis, is_diagonal)
             using_orthonormal = False
         else:
             basis = Matrix([Basis.from_stdin(i, coords).use
@@ -277,7 +263,7 @@ class Sys:
                 n, basis, using_orthonormal, is_pseudo_riemannian, 
                 using_coord_basis, coords, is_diagonal
             )
-        return cls(coords, basis, g_m, is_pseudo_riemannian, using_coord_basis)
+        return cls(coords, basis, g_m, using_coord_basis)
     
     def calculate_CB_g_d(self) -> MutableDenseNDimArray:
         g_d = MutableDenseNDimArray.zeros(self.n, self.n, self.n)
@@ -426,12 +412,11 @@ class Sys:
                 [0, 0, 'r(l)^2', 0],
                 [0, 0, 0, 'r(l)^2*sin(theta)^2']
             ]),
-            is_pseudo_riemannian=True,
             using_coord_basis=False
         )
 
 
 if __name__ == '__main__':
-    #Sys = Sys.from_demo()
-    Sys = Sys.from_stdin()
+    Sys = Sys.from_demo()
+    #Sys = Sys.from_stdin()
     Sys.print_GR_tensors()
