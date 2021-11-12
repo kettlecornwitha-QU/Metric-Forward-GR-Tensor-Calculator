@@ -88,8 +88,9 @@ class Tensor:
     
     def print_tensor(
             self, coords: Coordinate, using_coord_basis: bool) -> None:
-        index = [coords[i].label for i in range(len(coords))]
-        if not using_coord_basis:
+        if using_coord_basis:
+            index = [coords[i].label for i in range(len(coords))]
+        else:
             index = [f'{i}' for i in range(len(coords))]
         for i in product(range(len(coords)), repeat=self.rank):
             if self.use[i] == 0:
@@ -165,17 +166,19 @@ class Sys:
             is_diagonal: bool) -> list:
         g_m = eye(len(coords)).tolist()
         if is_diagonal:
-            indices = enumerate([i for i in range(len(coords))])
             if using_coord_basis:
                 indices = enumerate(coords)
+            else:
+                indices = enumerate([i for i in range(len(coords))])
             for i, j in indices:
-                    g_m[i][i] = cls.metric_prompt(j, j)
+                g_m[i][i] = cls.metric_prompt(j, j)
         else:
             for i in range(len(coords)):
                 for j in range(i, len(coords)):
-                    index_1, index_2 = i, j
                     if using_coord_basis:
                         index_1, index_2 = coords[i], coords[j]
+                    else:
+                        index_1, index_2 = i, j
                     g_m[i][j] = cls.metric_prompt(index_1, index_2)
                     g_m[j][i] = g_m[i][j]
         return g_m
@@ -186,7 +189,7 @@ class Sys:
             is_diagonal: bool) -> Matrix:
         while True:
             g_m = Matrix(cls.ask_metric(coords, using_coord_basis,
-                                           is_diagonal))
+                                        is_diagonal))
             if g_m.det() != 0:
                 return g_m
             print('\nMetric is singular, try again!\n')
@@ -246,7 +249,6 @@ class Sys:
             is_diagonal = y_n_question(r'\text{Is metric diagonal? (y/n)}',
                                        'Is metric diagonal? (y/n)  ')
             g_m = cls.metric_checked(coords, using_coord_basis, is_diagonal)
-            using_orthonormal = False
         else:
             basis = Matrix([Basis.from_stdin(i, coords).use
                             for i in range(n)]).T
@@ -417,6 +419,6 @@ class Sys:
 
 
 if __name__ == '__main__':
-    Sys = Sys.from_demo()
-    #Sys = Sys.from_stdin()
+    #Sys = Sys.from_demo()
+    Sys = Sys.from_stdin()
     Sys.print_GR_tensors()
