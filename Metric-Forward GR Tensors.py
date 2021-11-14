@@ -56,7 +56,7 @@ class Coordinate:
 
 
 @dataclass
-class Basis:
+class Basis_Vector:
     index: int
     use: list
     
@@ -71,7 +71,7 @@ class Basis:
         return input(prompt)
     
     @classmethod
-    def from_stdin(cls, index: int, coords: Coordinate) -> 'Basis':
+    def from_stdin(cls, index: int, coords: Coordinate) -> 'Basis_Vector':
         basis_vector = [cls.basis_prompt(index, coord) for coord in coords]
         return cls(index, basis_vector)
 
@@ -250,7 +250,7 @@ class Sys:
                                        'Is metric diagonal? (y/n)  ')
             g_m = cls.metric_checked(coords, using_coord_basis, is_diagonal)
         else:
-            basis = Matrix([Basis.from_stdin(i, coords).use
+            basis = Matrix([Basis_Vector.from_stdin(i, coords).use
                             for i in range(n)]).T
             is_pseudo_riemannian = cls.is_pseudo_riemannian()
             using_orthonormal = cls.using_orthonormal(is_pseudo_riemannian)
