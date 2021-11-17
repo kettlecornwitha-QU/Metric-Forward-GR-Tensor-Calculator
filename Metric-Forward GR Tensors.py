@@ -111,7 +111,7 @@ class Sys:
         self.basis = basis
         self.using_coord_basis = using_coord_basis
         self.dual_basis = basis.inv()
-        self.CB_g = MutableDenseNDimArray(g_m)  # CB = coordinate basis
+        self.CB_g = MutableDenseNDimArray(g_m)  # CB = Coordinate Basis
         self.CB_g_inv = simplify(MutableDenseNDimArray(g_m.inv()))
         self.CB_g_d = self.calculate_CB_g_d()
         self.CB_Gamma = self.calculate_CB_Gamma()
@@ -119,12 +119,12 @@ class Sys:
         self.CB_Rie = self.calculate_CB_Rie()
         self.CB_Ric = self.calculate_CB_Ric()
         self.R = self.calculate_R()
-        self.CB_G = self.calculate_CB_G()
-        self.CB_G_alt = self.calculate_CB_G_alt()
-        self.g = Tensor('metric tensor', 'g', '_*_*',
-                        MutableDenseNDimArray(g_m))
+        self.CB_G_co = self.calculate_CB_G_co()
+        self.CB_G_mixed = self.calculate_CB_G_mixed()
+        self.CB_G_contra = self.calculate_CB_G_contra()
+        self.g = Tensor('metric tensor', 'g', '_*_*', self.CB_g)
         self.g_inv = Tensor('inverse of metric tensor', 'g', '^*^*',
-                            simplify(MutableDenseNDimArray(g_m.inv())))
+                            self.CB_g_inv)
         self.g_d = Tensor('partial derivative of metric tensor', 'g',
                           '_*_*_,_*', self.calculate_g_d())
         self.Gamma = Tensor('Christoffel symbol - 2nd kind', 'Gamma',
@@ -135,9 +135,12 @@ class Sys:
                           self.calculate_Rie())
         self.Ric = Tensor('Ricci curvature tensor', 'R', '_*_*',
                           self.calculate_Ric())
-        self.G = Tensor('Einstein tensor', 'G', '_*_*', self.calculate_G())
-        self.G_alt = Tensor('Einstein tensor', 'G', '^*_*',
-                            self.calculate_G_alt())
+        self.G_co = Tensor('covariant Einstein tensor', 'G', '_*_*',
+                           self.calculate_G_co())
+        self.G_mixed = Tensor('mixed Einstein tensor', 'G', '^*_*',
+                              self.calculate_G_mixed())
+        self.G_contra = Tensor('contravariant Einstein tensor', 'G', '^*^*',
+                               self.calculate_G_contra())
         
     @staticmethod
     def ask_dim() -> int:
@@ -147,6 +150,33 @@ class Sys:
                 return int(n)
             print('Dimension needs to be a positive integer!')
 
+    @staticmethod
+    def using_coord_basis() -> bool:
+        return y_n_question(
+            r'~\text{Do you want to use the coordinate basis? (y/n)}\
+            \newline\text{i.e. } (\mathbf{e}_\mu)^\nu = \delta_\mu^\nu',
+            'Do you want to use the coordinate basis? (y/n)\n'
+        )
+    
+    @staticmethod
+    def is_pseudo_riemannian() -> bool:
+        return y_n_question(
+            r'~\text{Is manifold pseudo-Riemannian? (y/n)}',
+            'Is manifold pseudo-Riemannian? (y/n)\n'
+        )
+    
+    @staticmethod
+    def using_orthonormal(is_pseudo_riemannian: bool) -> bool:
+        latex_metric = r'\delta'
+        if is_pseudo_riemannian:
+            latex_metric = r'\eta'
+        return y_n_question(
+            r'~\text{Is basis orthonormal?}\newline\
+            \text{i.e. } g_{\alpha \beta} (\mathbf{e}_\mu)^\alpha \
+            (\mathbf{e}_\nu)^\beta = %s_{\mu \nu}' % latex_metric,
+            'Is basis orthonormal? (y/n)\n'
+        )
+    
     @staticmethod
     def metric_prompt(i: int or Coordinate, j: int or Coordinate) -> str:
         if isinstance(i, int):
@@ -184,7 +214,7 @@ class Sys:
         return g_m
     
     @classmethod
-    def metric_checked(
+    def metric_from_stdin(
             cls, coords: Coordinate, using_coord_basis: bool,
             is_diagonal: bool) -> Matrix:
         while True:
@@ -194,49 +224,23 @@ class Sys:
                 return g_m
             print('\nMetric is singular, try again!\n')
     
-    @staticmethod
-    def using_coord_basis() -> bool:
-        return y_n_question(
-            r'~\text{Do you want to use the coordinate basis? (y/n)}\
-            \newline\text{i.e. } (\mathbf{e}_\mu)^\nu = \delta_\mu^\nu',
-            'Do you want to use the coordinate basis? (y/n)\n'
-        )
-    
-    @staticmethod
-    def is_pseudo_riemannian() -> bool:
-        return y_n_question(
-            r'~\text{Is manifold pseudo-Riemannian? (y/n)}',
-            'Is manifold pseudo-Riemannian? (y/n)\n'
-        )
-    
-    @staticmethod
-    def using_orthonormal(is_pseudo_riemannian: bool) -> bool:
-        latex_metric = r'\delta'
-        if is_pseudo_riemannian:
-            latex_metric = r'\eta'
-        return y_n_question(
-            r'~\text{Is basis orthonormal?}\newline\
-            \text{i.e. } g_{\alpha \beta} (\mathbf{e}_\mu)^\alpha \
-            (\mathbf{e}_\nu)^\beta = %s_{\mu \nu}' % latex_metric,
-            'Is basis orthonormal? (y/n)\n'
-        )
-    
     @classmethod
     def metric_from_basis(
-            cls, n: int, basis: Matrix, using_orthonormal: bool,
+            cls, basis: Matrix, using_orthonormal: bool,
             is_pseudo_riemannian: bool, using_coord_basis: bool,
             coords: Coordinate, is_diagonal: bool) -> Matrix:
-        M = Matrix([
-            [k*l for k, l in product(i, j)]
-            for i, j in product(basis.tolist(), repeat=2)
-        ])
+        n = len(coords)
+        M = Matrix(
+            [[k*l for k, l in product(i, j)]
+             for i, j in product(basis.tolist(), repeat=2)]
+        )
         if using_orthonormal:
             v = Matrix([int(i % (n+1) == 0) for i in range(n**2)])
             if is_pseudo_riemannian:
                 v[0] = -1
         else:
-            v = cls.metric_checked(coords, using_coord_basis,
-                                   is_diagonal).reshape(n**2, 1)
+            v = cls.metric_from_stdin(coords, using_coord_basis,
+                                      is_diagonal).reshape(n**2, 1)
         return M.LUsolve(v).reshape(n, n)
 
     @classmethod
@@ -248,10 +252,11 @@ class Sys:
             basis = eye(n)
             is_diagonal = y_n_question(r'\text{Is metric diagonal? (y/n)}',
                                        'Is metric diagonal? (y/n)  ')
-            g_m = cls.metric_checked(coords, using_coord_basis, is_diagonal)
+            g_m = cls.metric_from_stdin(coords, using_coord_basis, is_diagonal)
         else:
-            basis = Matrix([Basis_Vector.from_stdin(i, coords).use
-                            for i in range(n)]).T
+            basis = Matrix(
+                [Basis_Vector.from_stdin(i, coords).use for i in range(n)]
+            ).T
             is_pseudo_riemannian = cls.is_pseudo_riemannian()
             using_orthonormal = cls.using_orthonormal(is_pseudo_riemannian)
             is_diagonal = True
@@ -262,7 +267,7 @@ class Sys:
                     \text{is } g_{ij} \text{ diagonal?}',
                     'Is the basis metric diagonal? (y/n)  ')
             g_m = cls.metric_from_basis(
-                n, basis, using_orthonormal, is_pseudo_riemannian, 
+                basis, using_orthonormal, is_pseudo_riemannian, 
                 using_coord_basis, coords, is_diagonal
             )
         return cls(coords, basis, g_m, using_coord_basis)
@@ -348,42 +353,61 @@ class Sys:
             R += self.CB_g_inv[i] * self.CB_Ric[i]
         return simplify(R)
 
-    def calculate_CB_G(self) -> MutableDenseNDimArray:
+    def calculate_CB_G_co(self) -> MutableDenseNDimArray:
         G = MutableDenseNDimArray.zeros(self.n, self.n)
         for i in product(range(self.n), repeat=2):
             G[i] = simplify(self.CB_Ric[i] - S(1)/2 * self.R * self.CB_g[i])
         return G
 
-    def calculate_G(self) -> MutableDenseNDimArray:
+    def calculate_G_co(self) -> MutableDenseNDimArray:
         if self.using_coord_basis:
-            return self.CB_G
+            return self.CB_G_co
         basis = self.basis
         G = MutableDenseNDimArray.zeros(self.n, self.n)
         for i, j in product(range(self.n), repeat=2):
             for k, l in product(range(self.n), repeat=2):
-                G[i, j] += self.CB_G[k, l] * basis[k, i] * basis[l, j]
+                G[i, j] += self.CB_G_co[k, l] * basis[k, i] * basis[l, j]
             G[i, j] = simplify(G[i, j])
         return G
     
-    def calculate_CB_G_alt(self) -> MutableDenseNDimArray:
-        G_alt = MutableDenseNDimArray.zeros(self.n, self.n)
+    def calculate_CB_G_mixed(self) -> MutableDenseNDimArray:
+        G = MutableDenseNDimArray.zeros(self.n, self.n)
         for i, j in product(range(self.n), repeat=2):
             for k in range(self.n):
-                G_alt[i, j] += self.CB_g_inv[i, k] * self.CB_G[k, j]
-            G_alt[i, j] = simplify(G_alt[i, j])
-        return G_alt
+                G[i, j] += self.CB_g_inv[i, k] * self.CB_G_co[k, j]
+            G[i, j] = simplify(G[i, j])
+        return G
 
-    def calculate_G_alt(self) -> MutableDenseNDimArray:
+    def calculate_G_mixed(self) -> MutableDenseNDimArray:
         if self.using_coord_basis:
-            return self.CB_G_alt
-        CB_G_alt = self.CB_G_alt
+            return self.CB_G_mixed
+        CB_G_m = self.CB_G_mixed
         basis, dual_basis = self.basis, self.dual_basis
-        G_alt = MutableDenseNDimArray.zeros(self.n, self.n)
+        G = MutableDenseNDimArray.zeros(self.n, self.n)
         for i, j in product(range(self.n), repeat=2):
             for k, l in product(range(self.n), repeat=2):
-                G_alt[i, j] += CB_G_alt[k, l] * dual_basis[i, k] * basis[l, j]
-            G_alt[i, j] = simplify(G_alt[i, j])
-        return G_alt
+                G[i, j] += CB_G_m[k, l] * dual_basis[i, k] * basis[l, j]
+            G[i, j] = simplify(G[i, j])
+        return G
+    
+    def calculate_CB_G_contra(self) -> MutableDenseNDimArray:
+        G = MutableDenseNDimArray.zeros(self.n, self.n)
+        for i, j in product(range(self.n), repeat=2):
+            for k in range(self.n):
+                G[i, j] += self.CB_g_inv[j, k] * self.CB_G_mixed[i, k]
+            G[i, j] = simplify(G[i, j])
+        return G
+    
+    def calculate_G_contra(self) -> MutableDenseNDimArray:
+        if self.using_coord_basis:
+            return self.CB_G_contra
+        CB_G_ctr, dual_basis = self.CB_G_contra, self.dual_basis
+        G = MutableDenseNDimArray.zeros(self.n, self.n)
+        for i, j in product(range(self.n), repeat=2):
+            for k, l in product(range(self.n), repeat=2):
+                G[i, j] += CB_G_ctr[k, l] * dual_basis[i, k] * dual_basis[j, l]
+            G[i, j] = simplify(G[i, j])
+        return G
     
     def print_GR_tensors(self) -> None:
         self.g.print_tensor(self.coords, True)
@@ -393,8 +417,8 @@ class Sys:
         if self.R != 0:
             disp_eq('R', self.R)
             print('\n\n')
-        self.G.print_tensor(self.coords, self.using_coord_basis)
-        self.G_alt.print_tensor(self.coords, self.using_coord_basis)
+        for tensor in (self.G_co, self.G_mixed, self.G_contra):
+            tensor.print_tensor(self.coords, self.using_coord_basis)
     
     @classmethod
     def from_demo(cls) -> 'Sys':
@@ -419,6 +443,6 @@ class Sys:
 
 
 if __name__ == '__main__':
-    #Sys = Sys.from_demo()
-    Sys = Sys.from_stdin()
+    Sys = Sys.from_demo()
+    #Sys = Sys.from_stdin()
     Sys.print_GR_tensors()
